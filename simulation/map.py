@@ -1,5 +1,6 @@
 import numpy as np
 import arena_config as arena
+from enum import Enum
 from arena_config import *
 import cv2 as cv
 import math
@@ -158,5 +159,3 @@ class Map:
 		cv.line(img, v2, v3, Map.__colorMap[8],2)
 		cv.line(img, v4, v5, Map.__colorMap[8],2)
 		return
-
-
