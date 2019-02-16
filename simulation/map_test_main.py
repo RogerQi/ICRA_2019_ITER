@@ -9,7 +9,7 @@ import cv2 as cv
 def main():
 
     map = Map(MapResolution.CM)
-    robo = MapRobot()
+    robo = MapRobot(map)
     cv.namedWindow('image', cv.WINDOW_NORMAL)
     cv.resizeWindow('image', map.get_y_cnt(),map.get_x_cnt())
 
@@ -17,15 +17,14 @@ def main():
 
     running = True
     map.draw_map(img)
-    map.draw_robot(img, robo)
     cv.imshow('image',img)
 
     while (running):
         key = cv.waitKey(0)
-        map.move(robo, key)
+        robo.move(key)
         map.draw_map(img)
-        map.draw_robot(img, robo)
         cv.imshow('image',img)
+        # Press ESC to quit
         if (key == 27): running = False
 
     cv.destroyAllWindows()
