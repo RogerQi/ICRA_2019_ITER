@@ -87,14 +87,12 @@ class Map:
 				self.__map_obs.append((
 					# box center & radius
 					(math.floor(obj[0]+obj[3]/2),math.floor(obj[1]+obj[2]/2)),
-					math.ceil(math.sqrt(obj[3]**2+obj[2]**2)/2),
+					math.sqrt((obj[3]/2)**2+(obj[2]/2)**2),
 					# box vex
 					(obj[0],obj[1]),
-					(obj[0],obj[1]+obj[2]),
-					(obj[0]+obj[3],obj[1]),
 					(obj[0]+obj[3],obj[1]+obj[2])
 					))
-				self.__map_obs_circles.append(self.__obs_to_circles(obj))
+				#self.__map_obs_circles.append(self.__obs_to_circles(obj))
 
 	def __obs_to_circles(self, obj):
 		# hard code alert
@@ -157,7 +155,7 @@ class Map:
 	def __draw_robot(self, img, robot):
 		angle = math.radians(robot.angle)
 		v4 = (robot.x, robot.y)
-		v5 = (robot.x-(robot.length/2)*math.cos(angle),robot.y+(robot.length/2)*math.sin(angle))
+		v5 = ((robot.v0[0]+robot.v1[0])/2,(robot.v0[1]+robot.v1[1])/2)
 		v4 = (math.floor(v4[1]/self.__map_resolution), math.floor(v4[0]/self.__map_resolution))
 		v5 = (math.floor(v5[1]/self.__map_resolution), math.floor(v5[0]/self.__map_resolution))
 
@@ -188,30 +186,61 @@ class Map:
 			obs=self.__map_obs[i]
 
 			# check distance first
-			tempDist = math.floor(math.sqrt(((robot.x-obs[0][0])**2 + (robot.y-obs[0][1])**2)))
+			tempDist = math.sqrt(((robot.x-obs[0][0])**2 + (robot.y-obs[0][1])**2))
 			if tempDist > (robot.radius + obs[1]):
 				continue
 
-			circles=self.__map_obs_circles[i]
-			for circle in circles:
-				tempDist = math.floor(math.sqrt(((robot.x-circle[0])**2 + (robot.y-circle[1])**2)))
-				if tempDist <= circle[2]:
-					return False
-		return True
-			# bad
-			# parametrize each edge of the robot
-			# pm1 = ParamLine (robot.v0,robot.v1)
-			# pm2 = ParamLine (robot.v1,robot.v2)
-			# pm3 = ParamLine (robot.v2,robot.v3)
-			# pm4 = ParamLine (robot.v0,robot.v3)
-			# for i in range(2,2+4):
-			# 	if (pm1.is_below(obs[i]) and pm2.is_below(obs[i]) and pm3.is_below(obs[i]) and pm4.is_below(obs[i])):
-			# 		continue
-			# 	if (not pm1.is_below(obs[i])) and (not pm2.is_below(obs[i])) and (not pm3.is_below(obs[i])) and (not pm4.is_below(obs[i])):
-			# 		continue
-			# 	return False
+			# for each robot edge, check with the obstacle box
+			vex_box = obs[2:]
+			if (not self.__edge_box_check(vex_box,robot.v0,robot.v1)) or (not self.__edge_box_check(vex_box,robot.v0,robot.v2)) or (not self.__edge_box_check(vex_box,robot.v1,robot.v3)) or (not self.__edge_box_check(vex_box,robot.v2,robot.v3)):
+				return False
 
-		#return True
+		return True
+
+	def __edge_box_check(self, box, p1, p2):
+		# bit value for each point
+
+		# xxxx up down right left
+		bitmap1 = int((p1[1]<box[0][1]))
+		bitmap2 = int((p2[1]<box[0][1]))
+
+		bitmap1 += int((p1[1]>box[1][1])) << 1
+		bitmap2 += int((p2[1]>box[1][1])) << 1
+
+		bitmap1 += int((p1[0]>box[1][0])) << 2
+		bitmap2 += int((p2[0]>box[1][0])) << 2
+
+		bitmap1 += int((p1[0]<box[0][0])) << 3
+		bitmap2 += int((p2[0]<box[0][0])) << 3
+
+		# if any of these two is 0 then automatic fail, because it is in the box
+		if (bitmap1==0) or (bitmap2==0):
+			return False
+		# if bit wise not equal 0, safe
+		if not (bitmap1 & bitmap2==0): return True
+		# if bit wise and equal 0, we need to see closely
+		bitxor = bitmap1 ^ bitmap2
+		# if 0011 one left one right across, 1100 one up one down across, fail
+		if (bitxor == 3) or (bitxor == 12): return False
+
+		# if four 1 in bitxor, automatic fail
+		if (bitxor == 15):
+			return False
+		pml = ParamLine(p1,p2)
+		# if one up one left check box upper left vex is above line
+		if ((bitmap1&1==1) and (bitmap2&8==8)) or ((bitmap1&8==8) and (bitmap2&1==1)):
+			if pml.is_below(box[0]): return False
+		# if one left one down check box lower left vex is below line
+		if ((bitmap1&1==1) and (bitmap2&4==4)) or ((bitmap1&4==4) and (bitmap2&1==1)):
+			if pml.is_below((box[1][0],box[0][1])): return False
+		# if one up one right check box upper right vex is above line
+		if ((bitmap1&8==8) and (bitmap2&2==2)) or ((bitmap1&2==2) and (bitmap2&8==8)):
+			if pml.is_above((box[0][0],box[1][1])): return False
+		# if one right one down check box lower right vex is below line
+		if ((bitmap1&4==4) and (bitmap2&2==2)) or ((bitmap1&2==2) and (bitmap2&4==4)):
+			if pml.is_above(box[1]): return False
+
+		return True
 
 class ParamLine:
 	def __init__(self, p1, p2):
@@ -232,7 +261,11 @@ class ParamLine:
 
 	def is_below(self,p):
 		r = self.a*p[1] + self.b*p[0] + self.c
-		return (r<0)
+		return (r<=0)
+
+	def is_above(self,p):
+		r = self.a*p[1] + self.b*p[0] + self.c
+		return (r>=0)
 
 class MapRobot:
 	def __init__(self, map):
@@ -245,7 +278,7 @@ class MapRobot:
 		self.turn_rate = 2
 
 		self.map = map
-		self.radius = math.ceil(math.sqrt(self.x**2+self.y**2)/2)
+		self.radius = math.sqrt((self.width/2)**2+(self.length/2)**2)
 
 		self.__update_vex()
 		self.map.add_robot(self)
@@ -263,10 +296,6 @@ class MapRobot:
 		self.v1=v1
 		self.v2=v2
 		self.v3=v3
-		#self.v0 = (math.floor(v0[0]/resolution), math.floor(v0[1]/resolution))
-		#self.v1 = (math.floor(v1[0]/resolution), math.floor(v1[1]/resolution))
-		#self.v2 = (math.floor(v2[0]/resolution), math.floor(v2[1]/resolution))
-		#self.v3 = (math.floor(v3[0]/resolution), math.floor(v3[1]/resolution))
 
 	def move(self, direction):
 		tempx = self.x
